@@ -48,6 +48,7 @@ class App(Frame):
         # Główna pętla
         self.window.mainloop()
 
+
     # Wyszukiwanie zdjeć
     def Search(self, query):
         Obrazy = Toplevel(self.window)
@@ -68,7 +69,7 @@ class App(Frame):
 
 
                 if item_data:
-                    #pobieranie tytuły
+                    #pobieranie tytułów
                     title = item_data[0].get("title", "Brak tytułu")
                     print(f'Tytuł: {title}')
 
@@ -94,7 +95,7 @@ class App(Frame):
                             print(f"Wystąpił błąd: {img_error}")
 
             # Uruchamianie pygame
-            self.window.withdraw()  # Ukrywa okno Tkinter
+            self.window.withdraw()  #Ukrywa okno Tkinter
             run_pygame_viewer(images, self.window)
 
         except Exception as e:
@@ -107,7 +108,7 @@ def run_pygame_viewer(images, show_window):
     screen = pygame.display.set_mode((1000, 600))
     pygame.display.set_caption("Zdjęcia NASA")
 
-    # Tło
+    #tło
     BLACK = (0, 0, 0)
 
     selected_image = None
