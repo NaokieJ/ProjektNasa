@@ -5,12 +5,14 @@ from tkinter.ttk import *
 import io
 from PIL import ImageTk, Image
 import pygame
+import asyncio
+import aiohttp
+
+
 
 # Pobieranie z API
-def fetch_nasa_images(query):
-    # Pobieranie zdjec
+def PobrZdjNasa(query):
     url = "https://images-api.nasa.gov/search"
-
     params_q = {'q': query}
     response = requests.get(url, params=params_q)
 
@@ -20,19 +22,43 @@ def fetch_nasa_images(query):
         raise Exception(f'Nie udało się pobrać danych, kod błędu: {response.status_code}')
 
 
-# Zamiana obrazu PIL na pygame
+# Zamiana obrazu PIL na Pygame
 def PilNaPygame(pil_image):
     mode = pil_image.mode
     size = pil_image.size
     data = pil_image.tobytes()
     return pygame.image.fromstring(data, size, mode)
 
+
+# Asynchroniczne pobieranie obrazu
+async def pobierzObraz(url):
+    try:
+        async with aiohttp.ClientSession() as session:
+            #User-agents, żeby symulować zapytanie przeglądarki, inaczej blokuje mi dostęp
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            }
+            async with session.get(url, headers=headers) as response:
+                if response.status == 200:
+                    image_data = await response.read()
+                    pil_image = Image.open(io.BytesIO(image_data)).convert("RGB")
+                    return pil_image
+                else:
+                    print(f"Błąd podczas pobierania obrazu: HTTP {response.status}")
+                    return None
+    except Exception as e:
+        print(f"Wystąpił błąd podczas pobierania obrazu: {e}")
+        return None
+
+
+
+
 # Główna aplikacja
 class App(Frame):
     window = 0
 
     def __init__(self):
-        #głowne okno aplikacji
+        # Główne okno aplikacji
         self.window = Tk()
 
         # Pole do wpisania nazwy
@@ -48,62 +74,59 @@ class App(Frame):
         # Główna pętla
         self.window.mainloop()
 
-
-    # Wyszukiwanie zdjeć
+    # Wyszukiwanie zdjęć
     def Search(self, query):
         Obrazy = Toplevel(self.window)
 
         try:
             # Pobieranie z API do wyświetlania
-            data = fetch_nasa_images(query)
+            data = PobrZdjNasa(query)
             items = data.get('collection', {}).get('items', [])
 
             if not items:
                 print("Brak wyników wyszukiwania")
                 return
 
-            images = [] #Przechowywanie obrazów
+            images = []  # Przechowywanie obrazów
 
-            for item in items[:5]:
-                item_data = item.get("data", [])
+            # Pobieranie obrazów asynch
+            async def fetch_images_async():
+                for item in items[:5]:
+                    item_data = item.get("data", [])
+                    if item_data:
+                        # Pobieranie tytułów
+                        title = item_data[0].get("title", "Brak tytułu")
+                        print(f'Tytuł: {title}')
 
+                    # Linki obrazów
+                    links = item.get('links', [])
+                    if links:
+                        href = links[0].get('href', None)
+                        if href:
+                            try:
+                                pil_image = await pobierzObraz(href)
+                                if pil_image:
+                                    thumbnail = pil_image.resize((200, 200))  # Miniatura
+                                    images.append({
+                                        'thumbnail': PilNaPygame(thumbnail),
+                                        'full': PilNaPygame(pil_image),
+                                        'title': title
+                                    })
+                            except Exception as img_error:
+                                print(f"Wystąpił błąd podczas przetwarzania obrazu: {img_error}")
 
-                if item_data:
-                    #pobieranie tytułów
-                    title = item_data[0].get("title", "Brak tytułu")
-                    print(f'Tytuł: {title}')
+                # Uruchomienie pygame
+                podgladPygame(images)
 
-                # linki obrazów
-                links = item.get('links', [])
-
-
-                if links:
-                    href = links[0].get('href', None)
-                    if href:
-                        try:
-                            # Pobieranie obrazu
-                            image_bytes = requests.get(href).content
-                            pil_image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-                            thumbnail = pil_image.resize((200, 200))  # Miniatura
-                            images.append({
-                                'thumbnail': PilNaPygame(thumbnail),
-                                'full': PilNaPygame(pil_image),
-                                'title': title
-                            })
-
-                        except Exception as img_error:
-                            print(f"Wystąpił błąd: {img_error}")
-
-            # Uruchamianie pygame
-            self.window.withdraw()  #Ukrywa okno Tkinter
-            run_pygame_viewer(images, self.window)
+            # Uruchomienie asynch
+            asyncio.run(fetch_images_async())
 
         except Exception as e:
             print(f"Wystąpił błąd: {e}")
 
 
-# Uruchamianie pygame do wyświetlania zdjęć
-def run_pygame_viewer(images, show_window):
+# pygame do wyświetlania
+def podgladPygame(images):
     pygame.init()
     screen = pygame.display.set_mode((1000, 600))
     pygame.display.set_caption("Zdjęcia NASA")
@@ -117,11 +140,11 @@ def run_pygame_viewer(images, show_window):
     while running:
         screen.fill(BLACK)
 
-        # powiększanie zdjęcia
+        # Powiększanie zdjęcia
         if selected_image:
             screen.blit(pygame.transform.scale(selected_image['full'], screen.get_size()), (0, 0))
         else:
-            # Wyświetlanie miniatur
+            #wyświetlanie miniatur
             for i, img in enumerate(images):
                 x = 220 * i + 20
                 y = 200
@@ -140,7 +163,7 @@ def run_pygame_viewer(images, show_window):
                 elif event.key == pygame.K_ESCAPE:
                     selected_image = None
 
-            #powiększenie zdjęcia
+            # Powiększenie zdjęcia
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 if not selected_image:
                     mouse_x, mouse_y = pygame.mouse.get_pos()
@@ -153,11 +176,8 @@ def run_pygame_viewer(images, show_window):
 
     pygame.quit()
 
-    # Zamykanie tkinter
-    show_window.deiconify()
 
-
-#Tkinter
+# Tkinter
 def main():
     a = App()
 
